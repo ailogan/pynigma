@@ -66,13 +66,20 @@ class EnigmaRotor:
     letters = None
     immobile = None
     indicator = None
+    orientation = None
 
-    def __init__(self, rotor_filename, target_indicator):
+    def __init__(self, rotor_filename, target_indicator, ring_position):
         #Set up our memory
         self.notches = []
         self.letters = []
         self.immobile = False
-        self.indicator = 'A'  #This is derived from the way the rotor definition files are written
+
+        #The outer ring can move around the inner wires
+        ring_offset = ord(ring_position) - ord('A')
+
+        #The files I'm using to load this system all start from 'A'
+        self.indicator = chr(ord('A') + ring_offset)  
+        self.orientation = 0
 
         #We have the filename from the part of the code that called us
         config = ConfigParser.ConfigParser()
@@ -109,20 +116,20 @@ class EnigmaRotor:
         output_letter = self.letters[input_pin]
         
         #What position is this rotor in?
-        rotor_offset = (ord(self.indicator) - ord('A'))
+        # rotor_offset = (ord(self.indicator) - ord('A'))
 
         #Apply the offset
-        output_pin = ((ord(output_letter) - ord('A')) - rotor_offset) % 26
+        output_pin = ((ord(output_letter) - ord('A')) - self.orientation) % 26
 
         return output_pin
 
     #For encoding when the signal is coming from the left (from the reflector back to the lightboard)
     def backwards_encode(self, input_pin):
         #What position is this rotor in?
-        rotor_offset = (ord(self.indicator) - ord('A'))
+        # rotor_offset = (ord(self.indicator) - ord('A'))
 
         #So figure out which letter this is
-        input_letter = chr(((input_pin + rotor_offset) % 26) + ord('A'))
+        input_letter = chr(((input_pin + self.orientation) % 26) + ord('A'))
 
         for x in range(0, 26):
             if(self.letters[x] == input_letter):
@@ -136,11 +143,12 @@ class EnigmaRotor:
         new_letters.append(self.letters[0])
 
         self.letters = new_letters
+        
+        new_orientation = (self.orientation + 1) % 26
+        self.orientation = new_orientation
 
         new_indicator = ((ord(self.indicator)-ord('A'))+1) % 26
-        
         self.indicator = chr(new_indicator + ord('A'))
-
 
     #Return the letter that would be showing through the window
     def get_indicator(self):
@@ -188,14 +196,15 @@ class EnigmaMachine:
     def print_state(self, input, output):
         print self.format_string.format(input, output, self.reflector.name, self.rotors[2].get_indicator(), self.rotors[1].get_indicator(), self.rotors[0].get_indicator())
 
-    def __init__(self, rotor_names, reflector_name, steckerbrett_name, rotor_positions):
+    def __init__(self, rotor_names, reflector_name, steckerbrett_name, rotor_positions, ring_positions):
         #set up our memory
         self.rotors = []
 
         #Load the wheels from right to left (eg: wheel 0 is the rightmost one)
         rotor_count = 1
         for rotor_name in rotor_names:
-            self.rotors.append(EnigmaRotor(self.make_rotor_filename(rotor_name), rotor_positions[rotor_count-1]))
+            current_rotor = rotor_count-1
+            self.rotors.append(EnigmaRotor(self.make_rotor_filename(rotor_name), rotor_positions[current_rotor], ring_positions[current_rotor]))
             rotor_count += 1
 
         #And flip the rotors around so that the fast rotor is the rightmost one
@@ -285,6 +294,7 @@ class EnigmaMachine:
 def main(argv=None):
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument("--rotors", help="Ordered, comma-separated list of rotors to use.", default="I,II,III")
+    parser.add_argument("--rings", help="Ordered, comma-separated list of ring settings to use.", default="A,A,A")
     parser.add_argument("--positions", help="Ordered, comma-separated list of initial positions to use.", default="A,A,A")
     parser.add_argument("--reflector", help="Which reflector to use", default="B", choices=["B", "C", "B_thin", "C_thin"])
     parser.add_argument("--steckerbrett", help="Which plugboard settings to use", default="default") 
@@ -293,6 +303,8 @@ def main(argv=None):
     args = parser.parse_args()
 
     rotor_names = args.rotors.split(",")
+
+    ring_positions = args.rings.split(",")
     
     rotor_positions = args.positions.split(",")
     
@@ -302,8 +314,7 @@ def main(argv=None):
 
     debug = args.debug
 
-    machine = EnigmaMachine(rotor_names, reflector_name, steckerbrett_name, rotor_positions)
-
+    machine = EnigmaMachine(rotor_names, reflector_name, steckerbrett_name, rotor_positions, ring_positions)
 
     if(debug):
         machine.print_header()

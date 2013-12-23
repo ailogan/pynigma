@@ -64,7 +64,6 @@ class EnigmaRotor:
     name = None
     notches = None
     letters = None
-    backwards_letters = None
     immobile = None
     indicator = None
 
@@ -72,7 +71,6 @@ class EnigmaRotor:
         #Set up our memory
         self.notches = []
         self.letters = []
-        self.backwards_letters = []
         self.immobile = False
         self.indicator = 'A'  #This is derived from the way the rotor definition files are written
 
@@ -86,7 +84,7 @@ class EnigmaRotor:
         self.notches.append(config.get("rotor", "notch_1"))
         self.notches.append(config.get("rotor", "notch_2"))
         
-        #And now load the letter map.  Remember that we have to come back through the other mapping when we bounce through the reflector!
+        #And now load the letter map.
         self.letter_map = {}
 
         for x in range(0, 26, 1):
@@ -98,26 +96,6 @@ class EnigmaRotor:
         for x in range(0, 26, 1):
             current_letter = chr(x+ord("A"))
             self.letters.append(self.letter_map[current_letter])
-
-        #And the backwards mapping
-        backwards_letter_map = {}
-
-        #Build the backwards map by reading the values out of the letter map and using that as the keys to store the current letter as the value
-        for x in range(0, 26, 1):
-            current_letter = chr(x+ord("A"))
-            target_letter = self.letter_map[current_letter]
-
-            #print "current_letter: " + current_letter + " target_letter: " + target_letter
-
-            backwards_letter_map[target_letter] = current_letter
-
-        #And now turn it into an array
-        for x in range(0, 26, 1):
-            current_letter = chr(x+ord("A"))
-            target_letter = backwards_letter_map[current_letter]
-            
-            #print "current_letter: " + current_letter + " target_letter: " + target_letter
-            self.backwards_letters.append(target_letter)
 
         #And rotate the letter map until we get to the right position
         while(self.indicator != target_indicator):
@@ -138,7 +116,7 @@ class EnigmaRotor:
 
         return output_pin
 
-    #For encoding when the signal is coming from the left (from reflector to lightboard)
+    #For encoding when the signal is coming from the left (from the reflector back to the lightboard)
     def backwards_encode(self, input_pin):
         #What position is this rotor in?
         rotor_offset = (ord(self.indicator) - ord('A'))
@@ -150,24 +128,14 @@ class EnigmaRotor:
             if(self.letters[x] == input_letter):
                 return x
 
-    def advance_letters(self):
-        new_letters = self.letters[1:]
-        new_letters.append(self.letters[0])
-
-        self.letters = new_letters
-
-    def advance_backwards_letters(self):
-        new_backwards_letters = self.backwards_letters[1:]
-        new_backwards_letters.append(self.backwards_letters[0])
-
-        backwards_letters = new_backwards_letters
-
     def advance(self):
         if(self.immobile):
             return
 
-        self.advance_letters()
-        self.advance_backwards_letters()
+        new_letters = self.letters[1:]
+        new_letters.append(self.letters[0])
+
+        self.letters = new_letters
 
         new_indicator = ((ord(self.indicator)-ord('A'))+1) % 26
         
@@ -197,14 +165,6 @@ class EnigmaMachine:
 
         return letter_str
 
-    def get_back_letters(self, item):
-        letter_str = ""
-
-        for x in range(0, 26, 1):
-            letter_str += item.backwards_letters[x] + ","
-
-        return letter_str
-    
     def make_rotor_filename(self, rotor_name):
         return rotor_name + ".rotor"
 

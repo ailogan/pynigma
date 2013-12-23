@@ -10,6 +10,24 @@ import sys
 import argparse
 import ConfigParser
 
+#Ja, ist plugboard!
+class Steckerbrett:
+    letter_map = None
+
+    def __init__(self, steckerbrett_filename):
+        #Set up our memory
+        self.letter_map = {}
+
+        config = ConfigParser.ConfigParser()
+        config.read(steckerbrett_filename)
+        
+        #And now load the letter map
+        for x in range(0, 26, 1):
+            current_letter = chr(x+ord("A"))
+            target_letter = config.get("wiring", current_letter)
+            self.letter_map[current_letter] = target_letter
+
+
 class EnigmaReflector:
     name = None
     letter_map = None
@@ -62,6 +80,16 @@ class EnigmaMachine:
 
     rotors = None
     reflector = None
+    steckerbrett = None
+
+    def get_letter_map(self, item):
+        letter_str = ""
+
+        for x in range(0, 26, 1):
+            current_letter = chr(x+ord("A"))
+            letter_str += item.letter_map[current_letter] + ","
+
+        return letter_str
     
     def make_rotor_filename(self, rotor_name):
         return rotor_name + ".rotor"
@@ -69,7 +97,10 @@ class EnigmaMachine:
     def make_reflector_filename(self, reflector_name):
         return reflector_name + ".reflector"
 
-    def __init__(self, rotor_names, reflector_name):
+    def make_steckerbrett_filename(self, steckerbrett_name):
+        return steckerbrett_name + ".steckerbrett"
+
+    def __init__(self, rotor_names, reflector_name, steckerbrett_name):
         
         #set up our memory
         self.rotors = []
@@ -81,38 +112,33 @@ class EnigmaMachine:
         #We can only have one reflector
         self.reflector = EnigmaReflector(self.make_reflector_filename(reflector_name))
 
+        #And, of course, only one plugboard
+        self.steckerbrett = Steckerbrett(self.make_steckerbrett_filename(steckerbrett_name))
+
         for rotor in self.rotors:
-            letter_map = rotor.letter_map
-            letter_str = ""
+            print "Rotor " + rotor.name + " has map: " + self.get_letter_map(rotor) + " and notches: " + str(rotor.notches)
 
-            for x in range(0, 26, 1):
-                current_letter = chr(x+ord("A"))
-                letter_str += letter_map[current_letter] + ","
-            
-            print "Rotor " + rotor.name + " has map: " + letter_str + " and notches: " + str(rotor.notches)
+        print "Reflector " + self.reflector.name + " has map: " + self.get_letter_map(self.reflector)
 
-        reflector_letter_map = self.reflector.letter_map
-        reflector_letter_str = ""
-
-        for x in range(0, 26, 1):
-            current_letter = chr(x+ord("A"))
-            reflector_letter_str += reflector_letter_map[current_letter] + ","
-
-        print "Reflector " + self.reflector.name + " has map: " + reflector_letter_str
-            
+        print "Steckerbrett has map: " + self.get_letter_map(self.steckerbrett)
 
 def main(argv=None):
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument("--rotors", help="Ordered, comma-separated list of rotors to use.", default="I,II,III")
     parser.add_argument("--reflector", help="Which reflector to use", default="B", choices=["B", "C", "B_thin", "C_thin"])
-    
+    parser.add_argument("--steckerbrett", help="Which plugboard settings to use", default="default") 
+   
     args = parser.parse_args()
 
     rotor_names = args.rotors.split(",")
     
     reflector_name = args.reflector
+    
+    steckerbrett_name = args.steckerbrett
 
-    machine = EnigmaMachine(rotor_names, reflector_name)
+    machine = EnigmaMachine(rotor_names, reflector_name, steckerbrett_name)
+
+
     
 
 

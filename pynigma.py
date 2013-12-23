@@ -324,14 +324,14 @@ def main(argv=None):
     
     steckerbrett_name = args.steckerbrett
 
+    message_key = rotor_positions
+
+    machine = EnigmaMachine(rotor_names, reflector_name, steckerbrett_name, message_key[:3], ring_positions)
+
     debug = args.debug
 
     if(debug):
         machine.print_header()
-
-    message_key = rotor_positions
-
-    machine = EnigmaMachine(rotor_names, reflector_name, steckerbrett_name, message_key[:3], ring_positions)
 
     for char in sys.stdin.read().upper():
         if(ord(char) >= ord('A') and ord(char) <= ord('Z')):

@@ -12,11 +12,11 @@ import ConfigParser
 
 #Ja, ist plugboard!
 class Steckerbrett:
-    letter_map = None
+    letters = None
 
     def __init__(self, steckerbrett_filename):
         #Set up our memory
-        self.letter_map = {}
+        self.letters = []
 
         config = ConfigParser.ConfigParser()
         config.read(steckerbrett_filename)
@@ -25,15 +25,17 @@ class Steckerbrett:
         for x in range(0, 26, 1):
             current_letter = chr(x+ord("A"))
             target_letter = config.get("wiring", current_letter)
-            self.letter_map[current_letter] = target_letter
+            self.letters.append(target_letter)
 
+    def encode(self, input_letter):
+        return self.letters[ord(input_letter) - ord('A')]
 
 class EnigmaReflector:
     name = None
-    letter_map = None
+    letters = None
 
     def __init__(self, reflector_filename):
-        self.letter_map = {}
+        self.letters = []
 
         #We have the filename from the part of the code that called us
         config = ConfigParser.ConfigParser()
@@ -46,18 +48,33 @@ class EnigmaReflector:
         for x in range(0, 26, 1):
             current_letter = chr(x+ord("A"))
             target_letter = config.get("wiring", current_letter)
-            self.letter_map[current_letter] = target_letter
-        
+            self.letters.append(target_letter)
+
+    #The idea is that I want to start from a pin, find the letter that maps to and then find which pin that is.
+
+    def encode(self, input_pin):
+        output_letter = self.letters[input_pin]
+
+        #The reflector doesn't rotate, so this isn't so bad.
+        output_pin = ord(output_letter) - ord('A')
+
+        return output_pin
 
 class EnigmaRotor:
     name = None
     notches = None
-    letter_map = None
+    letters = None
+    backwards_letters = None
+    immobile = None
+    indicator = None
 
-    def __init__(self, rotor_filename):
+    def __init__(self, rotor_filename, target_indicator):
         #Set up our memory
         self.notches = []
-        self.letter_map = {}
+        self.letters = []
+        self.backwards_letters = []
+        self.immobile = False
+        self.indicator = 'A'  #This is derived from the way the rotor definition files are written
 
         #We have the filename from the part of the code that called us
         config = ConfigParser.ConfigParser()
@@ -69,11 +86,97 @@ class EnigmaRotor:
         self.notches.append(config.get("rotor", "notch_1"))
         self.notches.append(config.get("rotor", "notch_2"))
         
-        #And now load the letter map
+        #And now load the letter map.  Remember that we have to come back through the other mapping when we bounce through the reflector!
+        self.letter_map = {}
+
         for x in range(0, 26, 1):
             current_letter = chr(x+ord("A"))
             target_letter = config.get("wiring", current_letter)
             self.letter_map[current_letter] = target_letter
+
+        #Build the forward mapping:
+        for x in range(0, 26, 1):
+            current_letter = chr(x+ord("A"))
+            self.letters.append(self.letter_map[current_letter])
+
+        #And the backwards mapping
+        backwards_letter_map = {}
+
+        #Build the backwards map by reading the values out of the letter map and using that as the keys to store the current letter as the value
+        for x in range(0, 26, 1):
+            current_letter = chr(x+ord("A"))
+            target_letter = self.letter_map[current_letter]
+
+            #print "current_letter: " + current_letter + " target_letter: " + target_letter
+
+            backwards_letter_map[target_letter] = current_letter
+
+        #And now turn it into an array
+        for x in range(0, 26, 1):
+            current_letter = chr(x+ord("A"))
+            target_letter = backwards_letter_map[current_letter]
+            
+            #print "current_letter: " + current_letter + " target_letter: " + target_letter
+            self.backwards_letters.append(target_letter)
+
+        #And rotate the letter map until we get to the right position
+        while(self.indicator != target_indicator):
+            self.advance()
+
+    def set_immobile(self, immobile):
+        self.immobile = immobile
+
+    #The idea is that we want to find the letter that the pin maps to, and then find which pin that letter maps to.
+    def encode(self, input_pin):
+        output_letter = self.letters[input_pin]
+        
+        #What position is this rotor in?
+        rotor_offset = (ord(self.indicator) - ord('A'))
+
+        #Apply the offset
+        output_pin = ((ord(output_letter) - ord('A')) - rotor_offset) % 26
+
+        return output_pin
+
+    #For encoding when the signal is coming from the left (from reflector to lightboard)
+    def backwards_encode(self, input_pin):
+        #What position is this rotor in?
+        rotor_offset = (ord(self.indicator) - ord('A'))
+
+        #So figure out which letter this is
+        input_letter = chr(((input_pin + rotor_offset) % 26) + ord('A'))
+
+        for x in range(0, 26):
+            if(self.letters[x] == input_letter):
+                return x
+
+    def advance_letters(self):
+        new_letters = self.letters[1:]
+        new_letters.append(self.letters[0])
+
+        self.letters = new_letters
+
+    def advance_backwards_letters(self):
+        new_backwards_letters = self.backwards_letters[1:]
+        new_backwards_letters.append(self.backwards_letters[0])
+
+        backwards_letters = new_backwards_letters
+
+    def advance(self):
+        if(self.immobile):
+            return
+
+        self.advance_letters()
+        self.advance_backwards_letters()
+
+        new_indicator = ((ord(self.indicator)-ord('A'))+1) % 26
+        
+        self.indicator = chr(new_indicator + ord('A'))
+
+
+    #Return the letter that would be showing through the window
+    def get_indicator(self):
+        return self.indicator
 
 class EnigmaMachine:
     """Class that aims to replicate the behavior of the three and four-rotor Enigma machines.  Note that the fourth rotor doesn't index like the other three, so a 4-rotor machine can be made to act like a three-rotor machine by skipping the fourth rotor."""
@@ -81,13 +184,24 @@ class EnigmaMachine:
     rotors = None
     reflector = None
     steckerbrett = None
+    format_string = "{0:>6} {1:>6} {2:>9} {3:>12} {4:>12} {5:>12}"
 
-    def get_letter_map(self, item):
+    def get_pin_from_letter(self, letter):
+        return ord(letter) - ord('A')
+
+    def get_letters(self, item):
         letter_str = ""
 
         for x in range(0, 26, 1):
-            current_letter = chr(x+ord("A"))
-            letter_str += item.letter_map[current_letter] + ","
+            letter_str += item.letters[x] + ","
+
+        return letter_str
+
+    def get_back_letters(self, item):
+        letter_str = ""
+
+        for x in range(0, 26, 1):
+            letter_str += item.backwards_letters[x] + ","
 
         return letter_str
     
@@ -100,14 +214,36 @@ class EnigmaMachine:
     def make_steckerbrett_filename(self, steckerbrett_name):
         return steckerbrett_name + ".steckerbrett"
 
-    def __init__(self, rotor_names, reflector_name, steckerbrett_name):
-        
+    def print_config(self):
+        for rotor in self.rotors:
+            print "Rotor " + rotor.name + " has map: " + self.get_letters(rotor) + "inverted: " + self.get_back_letters(rotor) + " and notches: " + str(rotor.notches)
+
+        print "Reflector " + self.reflector.name + " has map: " + self.get_letters(self.reflector)
+
+        print "Steckerbrett has map: " + self.get_letters(self.steckerbrett)
+
+    def print_header(self):
+        print self.format_string.format("input", "output", "reflector", "rotor 3 (" + self.rotors[2].name +")" , "rotor 2 (" + self.rotors[1].name +")", "rotor 1 (" + self.rotors[0].name +")")
+
+    def print_state(self, input, output):
+        print self.format_string.format(input, output, self.reflector.name, self.rotors[2].get_indicator(), self.rotors[1].get_indicator(), self.rotors[0].get_indicator())
+
+    def __init__(self, rotor_names, reflector_name, steckerbrett_name, rotor_positions):
         #set up our memory
         self.rotors = []
 
         #Load the wheels from right to left (eg: wheel 0 is the rightmost one)
+        rotor_count = 1
         for rotor_name in rotor_names:
-            self.rotors.append(EnigmaRotor(self.make_rotor_filename(rotor_name)))
+            self.rotors.append(EnigmaRotor(self.make_rotor_filename(rotor_name), rotor_positions[rotor_count-1]))
+            rotor_count += 1
+
+        #And flip the rotors around so that the fast rotor is the rightmost one
+        self.rotors.reverse()
+
+        #How many rotors did we just define?
+        if(len(self.rotors) > 3):
+            rotors[len(self.rotors)-1].set_immobile(True)
 
         #We can only have one reflector
         self.reflector = EnigmaReflector(self.make_reflector_filename(reflector_name))
@@ -115,32 +251,115 @@ class EnigmaMachine:
         #And, of course, only one plugboard
         self.steckerbrett = Steckerbrett(self.make_steckerbrett_filename(steckerbrett_name))
 
+    def advance_rotors(self):
+        #Figure out the current state of the system
+        rotors_to_advance = {}
+
+        rotors_to_advance[0] = True
+
+        current_rotor = -1
         for rotor in self.rotors:
-            print "Rotor " + rotor.name + " has map: " + self.get_letter_map(rotor) + " and notches: " + str(rotor.notches)
+            current_rotor += 1
+            current_indicator = rotor.get_indicator()
+            
+            for notch in rotor.notches:
+                if(current_indicator == notch):
+                    rotors_to_advance[current_rotor] = True
+                    rotors_to_advance[current_rotor+1] = True
+                    break;
 
-        print "Reflector " + self.reflector.name + " has map: " + self.get_letter_map(self.reflector)
+        #And push forward the rotors
+        for rotor_number in rotors_to_advance:
+            if(rotor_number <= len(self.rotors)):
+                self.rotors[rotor_number].advance()
 
-        print "Steckerbrett has map: " + self.get_letter_map(self.steckerbrett)
+    #Encoding a letter involves advancing rotors and then tracing the path of the input signal through the appropriate steckers and rotors and such
+    def encode(self, input_letter):
+        self.advance_rotors()
+
+        #First through the plugboard
+        intermediate_letter = self.steckerbrett.encode(input_letter)
+
+        #Then figure out which pin is energized
+        intermediate_pin = self.get_pin_from_letter(intermediate_letter)
+
+        # print "pins:",
+        # print str(intermediate_pin) + " =>",
+        
+        #Then through the rotors
+        for rotor in self.rotors:
+            # print rotor.name
+            new_intermediate_pin = rotor.encode(intermediate_pin)
+            intermediate_pin = new_intermediate_pin
+            # print str(intermediate_pin) + " =>",
+
+        #Reflector!
+        new_intermediate_pin = self.reflector.encode(intermediate_pin)
+        intermediate_pin = new_intermediate_pin
+        # print str(intermediate_pin) + " =>",
+
+        #And through the rotors the other way
+        self.rotors.reverse()
+
+        output_pin = None
+        for rotor in self.rotors:
+            # print rotor.name
+            new_intermediate_pin = rotor.backwards_encode(intermediate_pin)
+            intermediate_pin = new_intermediate_pin
+            output_pin = intermediate_pin
+            # print str(intermediate_pin) + " =>",
+
+        #re-reverse the list before we forget
+        self.rotors.reverse()
+
+        #Convert the pin back to a letter
+        output_letter = chr(ord('A') + output_pin)
+
+        #Back through the stecker
+        final_letter = self.steckerbrett.encode(output_letter)
+
+        # print final_letter
+
+        return final_letter
 
 def main(argv=None):
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument("--rotors", help="Ordered, comma-separated list of rotors to use.", default="I,II,III")
+    parser.add_argument("--positions", help="Ordered, comma-separated list of initial positions to use.", default="A,A,A")
     parser.add_argument("--reflector", help="Which reflector to use", default="B", choices=["B", "C", "B_thin", "C_thin"])
     parser.add_argument("--steckerbrett", help="Which plugboard settings to use", default="default") 
+    parser.add_argument("--debug", help="Print debugging information.", action="store_true") 
    
     args = parser.parse_args()
 
     rotor_names = args.rotors.split(",")
     
+    rotor_positions = args.positions.split(",")
+    
     reflector_name = args.reflector
     
     steckerbrett_name = args.steckerbrett
 
-    machine = EnigmaMachine(rotor_names, reflector_name, steckerbrett_name)
+    debug = args.debug
+
+    machine = EnigmaMachine(rotor_names, reflector_name, steckerbrett_name, rotor_positions)
 
 
-    
+    if(debug):
+        machine.print_header()
 
+    for line in sys.stdin.read():
+        for char in line:
+            output_char = machine.encode(char)
+            if(debug):
+                machine.print_state(char, output_char)
+            
+            else:
+                #Print without any spaces between the characters
+                sys.stdout.write(output_char)
+
+    #Toss a newline on the end
+    print
 
 #Give main() a single exit point (see: http://www.artima.com/weblogs/viewpost.jsp?thread=4829)
 if __name__ == "__main__":

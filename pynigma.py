@@ -296,7 +296,7 @@ def main(argv=None):
     parser.add_argument("--rotors", help="Ordered, comma-separated list of rotors to use.", default="I,II,III")
     parser.add_argument("--rings", help="Ordered, comma-separated list of ring settings to use.", default="A,A,A")
     parser.add_argument("--positions", help="Ordered, comma-separated list of initial positions to use.", default="A,A,A")
-    parser.add_argument("--reflector", help="Which reflector to use", default="B", choices=["B", "C", "B_thin", "C_thin"])
+    parser.add_argument("--reflector", help="Which reflector to use", default="B", choices=["A", "B", "C", "B_thin", "C_thin"])
     parser.add_argument("--steckerbrett", help="Which plugboard settings to use", default="default") 
     parser.add_argument("--debug", help="Print debugging information.", action="store_true") 
    

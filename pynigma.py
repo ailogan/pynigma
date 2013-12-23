@@ -294,40 +294,57 @@ class EnigmaMachine:
 def main(argv=None):
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument("--rotors", help="Ordered, comma-separated list of rotors to use.", default="I,II,III")
-    parser.add_argument("--rings", help="Ordered, comma-separated list of ring settings to use.", default="A,A,A")
-    parser.add_argument("--positions", help="Ordered, comma-separated list of initial positions to use.", default="A,A,A")
+    parser.add_argument("--rings", help="Ordered, comma-separated list of ring settings to use.  Either letters or numbers are fine.", default="A,A,A")
+    parser.add_argument("--positions", help="Ordered, comma-separated list of initial positions to use.  Either letters or numbers are fine.", default="A,A,A")
     parser.add_argument("--reflector", help="Which reflector to use", default="B", choices=["A", "B", "C", "B_thin", "C_thin"])
     parser.add_argument("--steckerbrett", help="Which plugboard settings to use", default="default") 
     parser.add_argument("--debug", help="Print debugging information.", action="store_true") 
-   
+
     args = parser.parse_args()
 
     rotor_names = args.rotors.split(",")
-
-    ring_positions = args.rings.split(",")
     
     rotor_positions = args.positions.split(",")
     
+    #Convert numbers to letters
+    for x in range(0, len(rotor_positions)):
+        if rotor_positions[x].isdigit():
+            rotor_position_int = int(rotor_positions[x])
+            rotor_positions[x] = chr(ord('A') + rotor_position_int - 1)
+
+    ring_positions = args.rings.split(",")
+
+    #Convert numbers to letters
+    for x in range(0, len(ring_positions)):
+        if ring_positions[x].isdigit():
+            ring_position_int = int(ring_positions[x])
+            ring_positions[x] = chr(ord('A') + ring_position_int - 1)
+
     reflector_name = args.reflector
     
     steckerbrett_name = args.steckerbrett
 
     debug = args.debug
 
-    machine = EnigmaMachine(rotor_names, reflector_name, steckerbrett_name, rotor_positions, ring_positions)
-
     if(debug):
         machine.print_header()
 
-    for line in sys.stdin.read():
-        for char in line:
+    message_key = rotor_positions
+
+    machine = EnigmaMachine(rotor_names, reflector_name, steckerbrett_name, message_key[:3], ring_positions)
+
+    for char in sys.stdin.read().upper():
+        if(ord(char) >= ord('A') and ord(char) <= ord('Z')):
             output_char = machine.encode(char)
             if(debug):
                 machine.print_state(char, output_char)
-            
             else:
                 #Print without any spaces between the characters
                 sys.stdout.write(output_char)
+        else:
+            #Preserve the formatting of the original message if this isn't debug mode
+            if(not debug):
+                sys.stdout.write(char)
 
     #Toss a newline on the end
     print

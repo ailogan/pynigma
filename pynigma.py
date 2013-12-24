@@ -160,7 +160,7 @@ class EnigmaMachine:
     rotors = None
     reflector = None
     steckerbrett = None
-    format_string = "{0:>6} {1:>6} {2:>9} {3:>12} {4:>12} {5:>12}"
+    trace_format_string = None
 
     def get_pin_from_letter(self, letter):
         return ord(letter) - ord('A')
@@ -190,15 +190,58 @@ class EnigmaMachine:
 
         print "Steckerbrett has map: " + self.get_letters(self.steckerbrett)
 
-    def print_header(self):
-        print self.format_string.format("input", "output", "reflector", "rotor 3 (" + self.rotors[2].name +")" , "rotor 2 (" + self.rotors[1].name +")", "rotor 1 (" + self.rotors[0].name +")")
+    def print_trace_header(self):
+        print self.trace_format_string.format(*self.trace_header_strings)
 
     def print_state(self, input, output):
         print self.format_string.format(input, output, self.reflector.name, self.rotors[2].get_indicator(), self.rotors[1].get_indicator(), self.rotors[0].get_indicator())
 
+    def trace_setup(self):
+        format_token_number = 0
+
+        #input char
+        self.trace_format_string += "{"+str(format_token_number)+":^6} "
+        self.trace_header_strings.append("in")
+
+        #stecker
+        format_token_number += 1
+        self.trace_format_string += "{"+str(format_token_number)+":^6} "
+        self.trace_header_strings.append("plugs")
+
+        #First pass through the rotors
+        for rotor in self.rotors:
+            format_token_number += 1
+            self.trace_format_string += "{"+str(format_token_number)+":^6} "
+            self.trace_header_strings.append(rotor.name)
+
+        #Reflector
+        format_token_number += 1
+        self.trace_format_string += "{"+str(format_token_number)+":^6} "
+        self.trace_header_strings.append(self.reflector.name)
+
+        #Second pass through the rotors
+        for rotor in reversed(self.rotors):
+            format_token_number += 1
+            self.trace_format_string += "{"+str(format_token_number)+":^6} "
+            self.trace_header_strings.append(rotor.name)
+
+        #stecker again
+        format_token_number += 1
+        self.trace_format_string += "{"+str(format_token_number)+":^6} "
+        self.trace_header_strings.append("plugs")
+
+        #And output
+        format_token_number += 1
+        self.trace_format_string += "{"+str(format_token_number)+":^6}"
+        self.trace_header_strings.append("out")
+
+
     def __init__(self, rotor_names, reflector_name, steckerbrett_name, rotor_positions, ring_positions):
         #set up our memory
         self.rotors = []
+        
+        self.trace_format_string = ""
+        self.trace_header_strings = []
 
         #Load the wheels from right to left (eg: wheel 0 is the rightmost one)
         rotor_count = 1
@@ -209,16 +252,18 @@ class EnigmaMachine:
 
         #And flip the rotors around so that the fast rotor is the rightmost one
         self.rotors.reverse()
-
+        
         #How many rotors did we just define?
         if(len(self.rotors) > 3):
             rotors[len(self.rotors)-1].set_immobile(True)
 
         #We can only have one reflector
         self.reflector = EnigmaReflector(self.make_reflector_filename(reflector_name))
-
+        
         #And, of course, only one plugboard
         self.steckerbrett = Steckerbrett(self.make_steckerbrett_filename(steckerbrett_name))
+
+        self.trace_setup()
 
     def advance_rotors(self):
         #Figure out the current state of the system
@@ -243,14 +288,20 @@ class EnigmaMachine:
                 self.rotors[rotor_number].advance()
 
     #Encoding a letter involves advancing rotors and then tracing the path of the input signal through the appropriate steckers and rotors and such
-    def encode(self, input_letter):
+    def encode(self, input_letter, do_trace):
         self.advance_rotors()
 
+        trace_output = []
+
+        trace_output.append(input_letter)
+
         #First through the plugboard
-        intermediate_letter = self.steckerbrett.encode(input_letter)
+        stecker_output = self.steckerbrett.encode(input_letter)
+        trace_output.append(stecker_output)
 
         #Then figure out which pin is energized
-        intermediate_pin = self.get_pin_from_letter(intermediate_letter)
+        intermediate_pin = self.get_pin_from_letter(stecker_output)
+        trace_output.append(intermediate_pin)
 
         # print "pins:",
         # print str(intermediate_pin) + " =>",
@@ -260,34 +311,40 @@ class EnigmaMachine:
             # print rotor.name
             new_intermediate_pin = rotor.encode(intermediate_pin)
             intermediate_pin = new_intermediate_pin
+            trace_output.append(intermediate_pin)
             # print str(intermediate_pin) + " =>",
 
         #Reflector!
         new_intermediate_pin = self.reflector.encode(intermediate_pin)
         intermediate_pin = new_intermediate_pin
+        trace_output.append(intermediate_pin)
         # print str(intermediate_pin) + " =>",
 
-        #And through the rotors the other way
-        self.rotors.reverse()
-
         output_pin = None
-        for rotor in self.rotors:
+        #And through the rotors the other way
+        for rotor in reversed(self.rotors):
             # print rotor.name
             new_intermediate_pin = rotor.backwards_encode(intermediate_pin)
             intermediate_pin = new_intermediate_pin
             output_pin = intermediate_pin
+            trace_output.append(intermediate_pin)
             # print str(intermediate_pin) + " =>",
-
-        #re-reverse the list before we forget
-        self.rotors.reverse()
 
         #Convert the pin back to a letter
         output_letter = chr(ord('A') + output_pin)
 
+        #drop the final pin and add the letter instead
+        trace_output = trace_output[:-1]
+        trace_output.append(output_letter)
+
         #Back through the stecker
         final_letter = self.steckerbrett.encode(output_letter)
+        trace_output.append(final_letter)
 
         # print final_letter
+
+        if(do_trace):
+            print self.trace_format_string.format(*trace_output)
 
         return final_letter
 
@@ -298,7 +355,7 @@ def main(argv=None):
     parser.add_argument("--positions", help="Ordered, comma-separated list of initial positions to use.  Either letters or numbers are fine.", default="A,A,A")
     parser.add_argument("--reflector", help="Which reflector to use", default="B", choices=["A", "B", "C", "B_thin", "C_thin"])
     parser.add_argument("--steckerbrett", help="Which plugboard settings to use", default="default") 
-    parser.add_argument("--debug", help="Print debugging information.", action="store_true") 
+    parser.add_argument("--trace", help="Trace the electrical path through the machine.", action="store_true") 
 
     args = parser.parse_args()
 
@@ -328,23 +385,19 @@ def main(argv=None):
 
     machine = EnigmaMachine(rotor_names, reflector_name, steckerbrett_name, message_key[:3], ring_positions)
 
-    debug = args.debug
+    trace = args.trace
 
-    if(debug):
-        machine.print_header()
+    if(trace):
+        machine.print_trace_header()
 
     for char in sys.stdin.read().upper():
         if(ord(char) >= ord('A') and ord(char) <= ord('Z')):
-            output_char = machine.encode(char)
-            if(debug):
-                machine.print_state(char, output_char)
-            else:
-                #Print without any spaces between the characters
-                sys.stdout.write(output_char)
-        else:
-            #Preserve the formatting of the original message if this isn't debug mode
-            if(not debug):
-                sys.stdout.write(char)
+            #Run it through the machine if it's a letter
+            char = machine.encode(char, trace)
+
+        #Preserve the formatting of the original message if this isn't trace mode
+        if(not trace):
+            sys.stdout.write(char)
 
     #Toss a newline on the end
     print

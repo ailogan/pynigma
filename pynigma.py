@@ -30,6 +30,41 @@ class Steckerbrett:
     def encode(self, input_letter):
         return self.letters[ord(input_letter) - ord('A')]
 
+class EnigmaETW:
+    name = None
+    letters = None
+
+    def __init__(self, etw_filename):
+        self.letters = []
+
+        #We have the filename from the part of the code that called us
+        config = ConfigParser.ConfigParser()
+        config.read(etw_filename)
+
+        #Load the letter map
+        for x in range(0, 26, 1):
+            current_letter = chr(x+ord("A"))
+            target_letter = config.get("wiring", current_letter)
+            self.letters.append(target_letter)
+
+    #The idea is that I want to start from a pin, find the letter that maps to and then find which pin that is.
+    def encode(self, input_letter):
+        index = ord(input_letter) - ord('A')
+
+        output_letter = self.letters[index]
+
+        #The reflector doesn't rotate, so this isn't so bad.
+        output_pin = ord(output_letter) - ord('A')
+
+        return output_pin
+
+    #And reverse that operation
+    def backwards_encode(self, input_pin):
+        output_letter = self.letters[input_pin]
+
+        return output_letter
+
+
 class EnigmaReflector:
     name = None
     letters = None
@@ -158,12 +193,16 @@ class EnigmaMachine:
     """Class that aims to replicate the behavior of the three and four-rotor Enigma machines.  Note that the fourth rotor doesn't index like the other three, so a 4-rotor machine can be made to act like a three-rotor machine by skipping the fourth rotor."""
 
     rotors = None
+    etw = None
     reflector = None
     steckerbrett = None
     trace_format_string = None
 
     def get_pin_from_letter(self, letter):
-        return ord(letter) - ord('A')
+        return self.etw.encode(letter)
+
+    def get_letter_from_pin(self, pin):
+        return self.etw.backwards_encode(pin)
 
     def get_letters(self, item):
         letter_str = ""
@@ -175,6 +214,9 @@ class EnigmaMachine:
 
     def make_rotor_filename(self, rotor_name):
         return rotor_name + ".rotor"
+
+    def make_etw_filename(self, rotor_name):
+        return rotor_name + ".ETW"
 
     def make_reflector_filename(self, reflector_name):
         return reflector_name + ".reflector"
@@ -208,6 +250,11 @@ class EnigmaMachine:
         self.trace_format_string += "{"+str(format_token_number)+":^6} "
         self.trace_header_strings.append("plugs")
 
+        #First pass through the entrywheel
+        format_token_number += 1
+        self.trace_format_string += "{"+str(format_token_number)+":^6} "
+        self.trace_header_strings.append("ETW")
+
         #First pass through the rotors
         for rotor in self.rotors:
             format_token_number += 1
@@ -225,6 +272,11 @@ class EnigmaMachine:
             self.trace_format_string += "{"+str(format_token_number)+":^6} "
             self.trace_header_strings.append(rotor.name)
 
+        #Entrywheel again
+        format_token_number += 1
+        self.trace_format_string += "{"+str(format_token_number)+":^6} "
+        self.trace_header_strings.append("ETW")
+
         #stecker again
         format_token_number += 1
         self.trace_format_string += "{"+str(format_token_number)+":^6} "
@@ -240,7 +292,7 @@ class EnigmaMachine:
         self.trace_format_string += "{"+str(format_token_number)+":^7}"
         self.trace_header_strings.append("rotors")
 
-    def __init__(self, rotor_names, reflector_name, steckerbrett_name, rotor_positions, ring_positions):
+    def __init__(self, rotor_names, etw_name, reflector_name, steckerbrett_name, rotor_positions, ring_positions):
         #set up our memory
         self.rotors = []
         
@@ -261,7 +313,10 @@ class EnigmaMachine:
         if(len(self.rotors) > 3):
             rotors[len(self.rotors)-1].set_immobile(True)
 
-        #We can only have one reflector
+        #We only have one entry wheel
+        self.etw = EnigmaETW(self.make_etw_filename(etw_name))
+
+        #one reflector
         self.reflector = EnigmaReflector(self.make_reflector_filename(reflector_name))
         
         #And, of course, only one plugboard
@@ -305,6 +360,8 @@ class EnigmaMachine:
 
         #Then figure out which pin is energized
         intermediate_pin = self.get_pin_from_letter(stecker_output)
+        trace_output.append(stecker_output + "=>" + "{0:02}".format(intermediate_pin))
+
         # trace_output.append(intermediate_pin)
 
         # print "pins:",
@@ -335,7 +392,8 @@ class EnigmaMachine:
             output_pin = intermediate_pin
 
         #Convert the pin back to a letter
-        output_letter = chr(ord('A') + output_pin)
+        output_letter = self.get_letter_from_pin(output_pin)
+        trace_output.append("{0:02}".format(intermediate_pin) + "=>" + output_letter)
 
         #Back through the stecker
         final_letter = self.steckerbrett.encode(output_letter)
@@ -364,6 +422,7 @@ def main(argv=None):
     parser.add_argument("--positions", help="Ordered, comma-separated list of initial positions to use.  Either letters or numbers are fine.", default="A,A,A")
     parser.add_argument("--reflector", help="Which reflector to use", default="B", choices=["A", "B", "C", "B_thin", "C_thin"])
     parser.add_argument("--steckerbrett", help="Which plugboard settings to use", default="default") 
+    parser.add_argument("--ETW", help="The wiring of the entry wheel.", default="default") 
     parser.add_argument("--trace", help="Trace the electrical path through the machine.", action="store_true") 
     parser.add_argument("--extract_key", help="Extract the message key from the beginning of the encoded message.", action="store_true") 
 
@@ -391,7 +450,9 @@ def main(argv=None):
     
     steckerbrett_name = args.steckerbrett
 
-    machine = EnigmaMachine(rotor_names, reflector_name, steckerbrett_name, rotor_positions, ring_positions)
+    etw_name = args.ETW
+
+    machine = EnigmaMachine(rotor_names, etw_name, reflector_name, steckerbrett_name, rotor_positions, ring_positions)
 
     trace = args.trace
 
@@ -421,7 +482,7 @@ def main(argv=None):
 
             #Set up a new machine with the new key
             print "\nExtracted new key: " + "".join(output_array[:3])
-            machine = EnigmaMachine(rotor_names, reflector_name, steckerbrett_name, output_array[:3], ring_positions)
+            machine = EnigmaMachine(rotor_names, etw_name, reflector_name, steckerbrett_name, output_array[:3], ring_positions)
 
     #Toss a newline on the end
     print

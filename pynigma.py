@@ -230,11 +230,15 @@ class EnigmaMachine:
         self.trace_format_string += "{"+str(format_token_number)+":^6} "
         self.trace_header_strings.append("plugs")
 
-        #And output
+        #output
         format_token_number += 1
         self.trace_format_string += "{"+str(format_token_number)+":^6}"
         self.trace_header_strings.append("out")
 
+        #and the state of the rotors
+        format_token_number += 1
+        self.trace_format_string += "{"+str(format_token_number)+":^7}"
+        self.trace_header_strings.append("rotors")
 
     def __init__(self, rotor_names, reflector_name, steckerbrett_name, rotor_positions, ring_positions):
         #set up our memory
@@ -297,49 +301,54 @@ class EnigmaMachine:
 
         #First through the plugboard
         stecker_output = self.steckerbrett.encode(input_letter)
-        trace_output.append(stecker_output)
+        trace_output.append(input_letter + "=>" + stecker_output)
 
         #Then figure out which pin is energized
         intermediate_pin = self.get_pin_from_letter(stecker_output)
-        trace_output.append(intermediate_pin)
+        # trace_output.append(intermediate_pin)
 
         # print "pins:",
         # print str(intermediate_pin) + " =>",
         
         #Then through the rotors
         for rotor in self.rotors:
-            # print rotor.name
             new_intermediate_pin = rotor.encode(intermediate_pin)
+            trace_output.append("{0:02}".format(intermediate_pin) + "=>" + "{0:02}".format(new_intermediate_pin))
+
             intermediate_pin = new_intermediate_pin
-            trace_output.append(intermediate_pin)
-            # print str(intermediate_pin) + " =>",
 
         #Reflector!
         new_intermediate_pin = self.reflector.encode(intermediate_pin)
+        trace_output.append("{0:02}".format(intermediate_pin) + "=>" + "{0:02}".format(new_intermediate_pin))
         intermediate_pin = new_intermediate_pin
-        trace_output.append(intermediate_pin)
+
+        #trace_output.append(intermediate_pin)
         # print str(intermediate_pin) + " =>",
 
         output_pin = None
         #And through the rotors the other way
         for rotor in reversed(self.rotors):
-            # print rotor.name
             new_intermediate_pin = rotor.backwards_encode(intermediate_pin)
+            trace_output.append("{0:02}".format(intermediate_pin) + "=>" + "{0:02}".format(new_intermediate_pin))
+
             intermediate_pin = new_intermediate_pin
             output_pin = intermediate_pin
-            trace_output.append(intermediate_pin)
-            # print str(intermediate_pin) + " =>",
 
         #Convert the pin back to a letter
         output_letter = chr(ord('A') + output_pin)
 
-        #drop the final pin and add the letter instead
-        trace_output = trace_output[:-1]
-        trace_output.append(output_letter)
-
         #Back through the stecker
         final_letter = self.steckerbrett.encode(output_letter)
+        trace_output.append(output_letter + "=>" + final_letter)
+
         trace_output.append(final_letter)
+
+        #Get the state of the indicators
+        indicators = ""
+        for rotor in self.rotors:
+            indicators = rotor.indicator + indicators
+
+        trace_output.append(indicators)
 
         # print final_letter
 

@@ -365,6 +365,7 @@ def main(argv=None):
     parser.add_argument("--reflector", help="Which reflector to use", default="B", choices=["A", "B", "C", "B_thin", "C_thin"])
     parser.add_argument("--steckerbrett", help="Which plugboard settings to use", default="default") 
     parser.add_argument("--trace", help="Trace the electrical path through the machine.", action="store_true") 
+    parser.add_argument("--extract_key", help="Extract the message key from the beginning of the encoded message.", action="store_true") 
 
     args = parser.parse_args()
 
@@ -390,23 +391,37 @@ def main(argv=None):
     
     steckerbrett_name = args.steckerbrett
 
-    message_key = rotor_positions
-
-    machine = EnigmaMachine(rotor_names, reflector_name, steckerbrett_name, message_key[:3], ring_positions)
+    machine = EnigmaMachine(rotor_names, reflector_name, steckerbrett_name, rotor_positions, ring_positions)
 
     trace = args.trace
 
+    extract_key = args.extract_key
+
     if(trace):
         machine.print_trace_header()
+
+    output_array = []
 
     for char in sys.stdin.read().upper():
         if(ord(char) >= ord('A') and ord(char) <= ord('Z')):
             #Run it through the machine if it's a letter
             char = machine.encode(char, trace)
+            output_array.append(char)
 
         #Preserve the formatting of the original message if this isn't trace mode
         if(not trace):
             sys.stdout.write(char)
+
+        if(extract_key and (len(output_array) == 6)):
+            for x in range(0,3):
+                #We know that the german enigma operators would start messages with two copies of the message key
+                if(output_array[x] != output_array[3+x]):
+                    print "Failed to match key!"
+                    return
+
+            #Set up a new machine with the new key
+            print "\nExtracted new key: " + "".join(output_array[:3])
+            machine = EnigmaMachine(rotor_names, reflector_name, steckerbrett_name, output_array[:3], ring_positions)
 
     #Toss a newline on the end
     print

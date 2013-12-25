@@ -14,18 +14,29 @@ import ConfigParser
 class Steckerbrett:
     letters = None
 
-    def __init__(self, steckerbrett_filename):
+    def __init__(self, steckerbrett_list):
         #Set up our memory
         self.letters = []
 
-        config = ConfigParser.ConfigParser()
-        config.read(steckerbrett_filename)
-        
-        #And now load the letter map
-        for x in range(0, 26, 1):
-            current_letter = chr(x+ord("A"))
-            target_letter = config.get("wiring", current_letter)
-            self.letters.append(target_letter)
+        sub_list = {}
+
+        print steckerbrett_list
+
+        #make the substitution list
+        for pair in steckerbrett_list:
+            sub_list[pair[0]] = pair[1]
+            
+            #Pairs are reciprocal
+            sub_list[pair[1]] = pair[0]
+
+        for x in range(ord('A'), ord('Z')+1):
+            if chr(x) in sub_list:
+                self.letters.append(sub_list[chr(x)])
+            
+            else:
+                self.letters.append(chr(x))
+
+        print self.letters
 
     def encode(self, input_letter):
         return self.letters[ord(input_letter) - ord('A')]
@@ -261,9 +272,6 @@ class EnigmaMachine:
     def make_reflector_filename(self, reflector_name):
         return reflector_name + ".reflector"
 
-    def make_steckerbrett_filename(self, steckerbrett_name):
-        return steckerbrett_name + ".steckerbrett"
-
     def print_config(self):
         for rotor in self.rotors:
             print "Rotor " + rotor.name + " has map: " + self.get_letters(rotor) + "inverted: " + self.get_back_letters(rotor) + " and notches: " + str(rotor.notches)
@@ -332,7 +340,7 @@ class EnigmaMachine:
         self.trace_format_string += "{"+str(format_token_number)+":^7}"
         self.trace_header_strings.append("rotors")
 
-    def __init__(self, rotor_names, rotor_positions, ring_positions, etw_name, reflector_name, reflector_position, reflector_ring, steckerbrett_name):
+    def __init__(self, rotor_names, rotor_positions, ring_positions, etw_name, reflector_name, reflector_position, reflector_ring, steckerbrett_list):
         #set up our memory
         self.rotors = []
         
@@ -360,7 +368,7 @@ class EnigmaMachine:
         self.reflector = EnigmaReflector(self.make_reflector_filename(reflector_name), reflector_position, reflector_ring)
         
         #And, of course, only one plugboard
-        self.steckerbrett = Steckerbrett(self.make_steckerbrett_filename(steckerbrett_name))
+        self.steckerbrett = Steckerbrett(steckerbrett_list)
 
         self.trace_setup()
 
@@ -463,7 +471,7 @@ def main(argv=None):
     parser.add_argument("--reflector", help="Which reflector to use", default="B", choices=["A", "B", "C", "B_thin", "C_thin", "railway"])
     parser.add_argument("--reflector_position", help="What position to set the reflector to.", default="A")
     parser.add_argument("--reflector_ring", help="Ring setting for use on the reflector wheel.", default="A")
-    parser.add_argument("--steckerbrett", help="Which plugboard settings to use", default="default") 
+    parser.add_argument("--steckerbrett", help="Comma-separated list of plug settings to use.  Example: AM,FI,NV", default="") 
     parser.add_argument("--ETW", help="The wiring of the entry wheel.", default="default") 
     parser.add_argument("--trace", help="Trace the electrical path through the machine.", action="store_true") 
     parser.add_argument("--extract_key", help="Extract the message key from the beginning of the encoded message.", action="store_true") 
@@ -498,12 +506,15 @@ def main(argv=None):
     if reflector_ring.isdigit():
         reflector_ring_int = int(reflector_ring)
         reflector_ring = chr(ord('A') + reflector_ring_int - 1)
-    
-    steckerbrett_name = args.steckerbrett
+
+    steckerbrett_list = []
+
+    if(args.steckerbrett != ""):
+        steckerbrett_list = args.steckerbrett.split(",")
 
     etw_name = args.ETW
 
-    machine = EnigmaMachine(rotor_names, rotor_positions, ring_positions, etw_name, reflector_name, reflector_position, reflector_ring, steckerbrett_name)
+    machine = EnigmaMachine(rotor_names, rotor_positions, ring_positions, etw_name, reflector_name, reflector_position, reflector_ring, steckerbrett_list)
 
     trace = args.trace
 

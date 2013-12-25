@@ -60,17 +60,34 @@ class EnigmaETW:
 
     #And reverse that operation
     def backwards_encode(self, input_pin):
-        output_letter = self.letters[input_pin]
+        #The reverse encoding is a little weird because of the data structure I'm using.  To decode 02, for example, I need to convert it back into a letter ("C"), and then scan through the character map until I find it.  The position where the character appears is the letter it should be converted back into.
 
-        return output_letter
+        input_letter = chr(input_pin + ord('A'))
 
+        for x in range(0, len(self.letters)):
+            if(self.letters[x] == input_letter):
+                output_letter = chr(x + ord('A'))
+                return output_letter
+
+        #Uh...
+        print "Failed to decode letter in ETW"
+        return 'A'
 
 class EnigmaReflector:
     name = None
     letters = None
+    orientation = None
+    indicator = None
 
-    def __init__(self, reflector_filename):
+    def __init__(self, reflector_filename, reflector_position, reflector_offset):
         self.letters = []
+
+        #The outer ring can move around the inner wires
+        reflector_offset = ord(reflector_offset) - ord('A')
+
+        #The files I'm using to load this system all start from 'A'
+        self.indicator = chr(ord('A') + reflector_offset)
+        self.orientation = 0
 
         #We have the filename from the part of the code that called us
         config = ConfigParser.ConfigParser()
@@ -85,13 +102,36 @@ class EnigmaReflector:
             target_letter = config.get("wiring", current_letter)
             self.letters.append(target_letter)
 
+        #And rotate to the appropriate position
+        while(self.indicator != reflector_position):
+            self.advance()
+
+    def advance(self):
+        new_letters = self.letters[1:]
+        new_letters.append(self.letters[0])
+
+        self.letters = new_letters
+        
+        new_orientation = (self.orientation + 1) % 26
+        self.orientation = new_orientation
+
+        new_indicator = ((ord(self.indicator)-ord('A'))+1) % 26
+        self.indicator = chr(new_indicator + ord('A'))
+
+    #Return the letter that would be showing through the window
+    def get_indicator(self):
+        return self.indicator
+
     #The idea is that I want to start from a pin, find the letter that maps to and then find which pin that is.
 
     def encode(self, input_pin):
         output_letter = self.letters[input_pin]
+        
+        #What position is this rotor in?
+        # rotor_offset = (ord(self.indicator) - ord('A'))
 
-        #The reflector doesn't rotate, so this isn't so bad.
-        output_pin = ord(output_letter) - ord('A')
+        #Apply the offset
+        output_pin = ((ord(output_letter) - ord('A')) - self.orientation) % 26
 
         return output_pin
 
@@ -292,7 +332,7 @@ class EnigmaMachine:
         self.trace_format_string += "{"+str(format_token_number)+":^7}"
         self.trace_header_strings.append("rotors")
 
-    def __init__(self, rotor_names, etw_name, reflector_name, steckerbrett_name, rotor_positions, ring_positions):
+    def __init__(self, rotor_names, rotor_positions, ring_positions, etw_name, reflector_name, reflector_position, reflector_ring, steckerbrett_name):
         #set up our memory
         self.rotors = []
         
@@ -317,7 +357,7 @@ class EnigmaMachine:
         self.etw = EnigmaETW(self.make_etw_filename(etw_name))
 
         #one reflector
-        self.reflector = EnigmaReflector(self.make_reflector_filename(reflector_name))
+        self.reflector = EnigmaReflector(self.make_reflector_filename(reflector_name), reflector_position, reflector_ring)
         
         #And, of course, only one plugboard
         self.steckerbrett = Steckerbrett(self.make_steckerbrett_filename(steckerbrett_name))
@@ -343,7 +383,7 @@ class EnigmaMachine:
 
         #And push forward the rotors
         for rotor_number in rotors_to_advance:
-            if(rotor_number <= len(self.rotors)):
+            if(rotor_number < len(self.rotors)):
                 self.rotors[rotor_number].advance()
 
     #Encoding a letter involves advancing rotors and then tracing the path of the input signal through the appropriate steckers and rotors and such
@@ -420,7 +460,9 @@ def main(argv=None):
     parser.add_argument("--rotors", help="Ordered, comma-separated list of rotors to use.", default="I,II,III")
     parser.add_argument("--rings", help="Ordered, comma-separated list of ring settings to use.  Either letters or numbers are fine.", default="A,A,A")
     parser.add_argument("--positions", help="Ordered, comma-separated list of initial positions to use.  Either letters or numbers are fine.", default="A,A,A")
-    parser.add_argument("--reflector", help="Which reflector to use", default="B", choices=["A", "B", "C", "B_thin", "C_thin"])
+    parser.add_argument("--reflector", help="Which reflector to use", default="B", choices=["A", "B", "C", "B_thin", "C_thin", "railway"])
+    parser.add_argument("--reflector_position", help="What position to set the reflector to.", default="A")
+    parser.add_argument("--reflector_ring", help="Ring setting for use on the reflector wheel.", default="A")
     parser.add_argument("--steckerbrett", help="Which plugboard settings to use", default="default") 
     parser.add_argument("--ETW", help="The wiring of the entry wheel.", default="default") 
     parser.add_argument("--trace", help="Trace the electrical path through the machine.", action="store_true") 
@@ -448,11 +490,20 @@ def main(argv=None):
 
     reflector_name = args.reflector
     
+    reflector_position = args.reflector_position
+
+    reflector_ring = args.reflector_ring
+
+    #Convert numbers to letters
+    if reflector_ring.isdigit():
+        reflector_ring_int = int(reflector_ring)
+        reflector_ring = chr(ord('A') + reflector_ring_int - 1)
+    
     steckerbrett_name = args.steckerbrett
 
     etw_name = args.ETW
 
-    machine = EnigmaMachine(rotor_names, etw_name, reflector_name, steckerbrett_name, rotor_positions, ring_positions)
+    machine = EnigmaMachine(rotor_names, rotor_positions, ring_positions, etw_name, reflector_name, reflector_position, reflector_ring, steckerbrett_name)
 
     trace = args.trace
 
@@ -482,7 +533,7 @@ def main(argv=None):
 
             #Set up a new machine with the new key
             print "\nExtracted new key: " + "".join(output_array[:3])
-            machine = EnigmaMachine(rotor_names, etw_name, reflector_name, steckerbrett_name, output_array[:3], ring_positions)
+            machine = EnigmaMachine(rotor_names, output_array[:3], ring_positions, etw_name, reflector_name, reflector_position, reflector_ring, steckerbrett_name)
 
     #Toss a newline on the end
     print
